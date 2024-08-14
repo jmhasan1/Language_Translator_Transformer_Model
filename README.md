@@ -1,1 +1,1 @@
-Lamguage Translaor Using Trannsformer architecture coded in Python
+Language Translator Using Transformer architecture coded in Python
