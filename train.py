@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset , DataLoader , random_split
 
 from dataset import BilingualDataset , causal_mask
+from model import build_transformer
 
 from datasets import load_dataset
 from tokenizers import Tokenizer
@@ -61,4 +62,9 @@ def get_ds(config):
     print(f'Max length of source sentence: {max_len_src}')
     print(f'Max length of target sentence: {max_len_tgt}')
 
+    train_dataloader = DataLoader(train_ds , batch_size=config['batch_size'], shuffle=True)
+    val_dataloader = DataLoader(val_ds , batch_size= 1 , shuffle=True)
 
+    return train_dataloader , val_dataloader , tokenizer_src, tokenizer_tgt
+
+# will build according our vocabulary size a transformer model 
