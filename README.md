@@ -1,11 +1,11 @@
 <h2>Language Translator Using Transformer model </h2>
-<P>This is a comprehensive implementation of the Transformer architecture as described in the "Attention Is All You Need" paper. Let's break it down:
+<P>This is a comprehensive implementation of the Transformer architecture as described in the "Attention Is All You Need" paper. Breaking down the model : <br>
 
-Input Embeddings:
-The InputEmbeddings class converts input tokens into dense vectors. It uses PyTorch's nn.Embedding layer to map each token to a vector of size d_model. The vectors are then scaled by √(d_model) as per the original paper.
-Positional Embeddings:
+<H4>Input Embeddings</H4>:
+The InputEmbeddings class converts input tokens into dense vectors. It uses PyTorch's nn.Embedding layer to map each token to a vector of size d_model. The vectors are then scaled by √(d_model) as per the original paper.<br>
+<h4>Positional Embeddings:</h4>
 The PositionalEmbeddings class adds position information to the input embeddings. It creates a matrix of positional encodings using sine and cosine functions. These encodings are added to the input embeddings to give the model information about the sequence order.
-Layer Normalization:
+Layer Normalization:<br>
 The LayerNormalization class implements layer normalization, which helps stabilize the learning process. It normalizes the inputs across the features.
 Feed Forward Block:
 The FeedForwardBlock class implements the position-wise feed-forward networks used in both the encoder and decoder. It consists of two linear transformations with a ReLU activation in between.
