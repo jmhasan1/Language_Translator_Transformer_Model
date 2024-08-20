@@ -4,6 +4,10 @@ from torch.utils.data import Dataset
 
 class BilingualDataset(Dataset):
     def __init__(self , ds , tokenizer_src , tokenizer_tgt , src_lang , tgt_lang , seq_len ) -> None:
+
+        super().__init__()
+        self.seq_len = seq_len
+
         self.ds = ds
         self.tokenizer_src = tokenizer_src
         self.tokenizer_tgt = tokenizer_tgt
@@ -17,8 +21,10 @@ class BilingualDataset(Dataset):
     def __len__(self):
         return len(self.ds)
     
-    def __getitem__(self, index : Any) -> Any:
-        src_target_pair = self.ds[index]
+    # def __getitem__(self, index : Any) -> Any:
+
+    def __getitem__(self, idx) :
+        src_target_pair = self.ds[idx]
         src_text = src_target_pair['translation'][self.sec_lang]
         tgt_text = src_target_pair['translation'][self.tgt_lang]
 
@@ -67,14 +73,14 @@ class BilingualDataset(Dataset):
         assert decoder_input.size(0) == self.seq_len
         assert label.size(0)  == self.seq_len
 
-        return {
+        return{
             'encoder_input': encoder_input,  #(Seq_len)
             'decoder_input': decoder_input,  #(Seq_len)
             'encoder_mask' : (encoder_input != self.pad_token).unsqueeze(0).unsqueeze(0).int() , #(1 ,1 , seq_len)
             'decoder_mask': (decoder_input != self.pad_token).unsqueeze(0).int() & causal_mask(decoder_input.size(0)) , #(1 , seq_len) & (1 , seq_len , seq_len)
             'label': label,
             'src_text': src_text,
-            'tgt_text': tgt_text.
+            'tgt_text': tgt_text,
         }
     
     def causal_mask(size):
