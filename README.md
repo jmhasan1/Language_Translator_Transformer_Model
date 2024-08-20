@@ -1,5 +1,15 @@
 <h2>Language Translator Using Transformer model </h2>
-<P>This is a comprehensive implementation of the Transformer architecture as described in the "Attention Is All You Need" paper. Here's detailed break-down of the translation model : <br>
+<P>This is a comprehensive implementation of the Transformer architecture as described in the "Attention Is All You Need" paper. Here's a detailed break-down of the translation model: <be>
+<h3>Model Architecture</h3>
+  <img src="The-Transformer-model-architecture.png" alt="Transformer" width="500" height="600">
+<p>
+The model uses a standard Transformer architecture with the following components:<br>
+
+Encoder: Comprising N layers, each with multi-head attention and feed-forward networks.<br>
+Decoder: Similar to the encoder, with an additional attention mechanism to attend to the encoder output.<br>
+Attention Mechanisms: Visualizing where the model focuses during translation.<br>
+  
+</p>
 
 <H4>Input Embeddings:</H4>
 The InputEmbeddings class converts input tokens into dense vectors. It uses PyTorch's nn.Embedding layer to map each token to a vector of size d_model. The vectors are then scaled by √(d_model) as per the original paper.<br>
