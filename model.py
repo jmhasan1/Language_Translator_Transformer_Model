@@ -178,7 +178,7 @@ class Encoder(nn.Module):
     def __init__(self, layers : nn.ModuleList) -> None:
         super().__init__()
         self.layers = layers
-        super.norm = LayerNormalization()
+        self.norm = LayerNormalization()
     
     def forward(self, x, mask):
         # # x.shape = (Batch_size, seq_len, d_model)

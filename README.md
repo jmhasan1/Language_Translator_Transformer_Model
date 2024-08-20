@@ -28,4 +28,4 @@ The Transformer class combines all the above components into a complete model. I
 <h5>build_transformer Function:</h5>
 This function is a convenient way to construct the entire Transformer model given hyperparameters like vocabulary sizes, sequence lengths, model dimension, number of layers, etc.<br>
 
-The code follows the original Transformer architecture closely, including details like scaling the embeddings, using layer normalization, and initializing parameters with Xavier uniform initialization.<br></P>
+<br><br>The code follows the original Transformer architecture closely, including details like scaling the embeddings, using layer normalization, and initializing parameters with Xavier uniform initialization.<br></P>
