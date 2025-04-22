@@ -1,260 +1,309 @@
+"""
+Tokenizer implementation for the language translation model.
+"""
+
 import os
-import torch
-from torch.utils.data import Dataset, DataLoader
-from typing import Dict, List, Tuple, Optional
+import logging
+from typing import List, Dict, Union, Tuple, Optional
 import sentencepiece as spm
-import pandas as pd
-from sklearn.model_selection import train_test_split
 
+logger = logging.getLogger(__name__)
 
-class TokenizerSentencePiece:
-    def __init__(
-        self,
-        vocab_size: int = 8000,
-        model_type: str = "bpe",
-        character_coverage: float = 0.9995,
-        model_prefix: str = "tokenizer"
-    ):
-        self.vocab_size = vocab_size
-        self.model_type = model_type
-        self.character_coverage = character_coverage
-        self.model_prefix = model_prefix
+class Tokenizer:
+    def __init__(self, model_path: str = None):
+        """
+        Initialize tokenizer from a model or prepare for training.
         
-        # Special tokens
-        self.pad_token = "[PAD]"
-        self.unk_token = "[UNK]"
-        self.bos_token = "[BOS]"
-        self.eos_token = "[EOS]"
+        Args:
+            model_path: Path to a trained SentencePiece model
+        """
+        self.sp_model = None
+        self.model_path = model_path
+        self.special_tokens = {
+            "<pad>": 0,
+            "<unk>": 1,
+            "<bos>": 2,
+            "<eos>": 3
+        }
         
-        # IDs will be set after training
-        self.pad_token_id = 0
-        self.unk_token_id = 1
-        self.bos_token_id = 2
-        self.eos_token_id = 3
+        if model_path and os.path.exists(model_path):
+            self.load(model_path)
+    
+    def train(self, 
+              input_file: str, 
+              vocab_size: int = 32000,
+              model_type: str = "bpe",
+              character_coverage: float = 0.9995,
+              model_prefix: str = "tokenizer",
+              input_sentence_size: int = 1000000,
+              shuffle_input_sentence: bool = True,
+              normalization_rule_name: str = "nmt_nfkc_cf",
+              add_dummy_prefix: bool = True) -> None:
+        """
+        Train a SentencePiece tokenizer on input text file.
         
-        # SentencePiece processor
-        self.sp = None
+        Args:
+            input_file: Path to input text file (one sentence per line)
+            vocab_size: Size of vocabulary
+            model_type: SentencePiece model type (bpe, unigram, char, word)
+            character_coverage: Character coverage
+            model_prefix: Output model prefix
+            input_sentence_size: Number of sentences to sample for training
+            shuffle_input_sentence: Whether to shuffle sentences
+            normalization_rule_name: Normalization rule
+            add_dummy_prefix: Whether to add dummy prefix
+        """
+        logger.info(f"Training SentencePiece tokenizer on {input_file} with vocab size {vocab_size}")
         
-    def train(self, texts: List[str], output_dir: str = "./"):
-        """Train a SentencePiece tokenizer on the provided texts."""
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-            
-        # Write texts to a temporary file
-        corpus_file = os.path.join(output_dir, "corpus.txt")
-        with open(corpus_file, "w", encoding="utf-8") as f:
-            for text in texts:
-                f.write(text + "\n")
-                
-        # Train SentencePiece model
-        model_path = os.path.join(output_dir, self.model_prefix)
+        # Ensure model directory exists
+        os.makedirs(os.path.dirname(model_prefix), exist_ok=True)
+        
+        # Train model
         spm.SentencePieceTrainer.train(
-            input=corpus_file,
-            model_prefix=model_path,
-            vocab_size=self.vocab_size,
-            model_type=self.model_type,
-            character_coverage=self.character_coverage,
-            pad_id=self.pad_token_id,
-            unk_id=self.unk_token_id,
-            bos_id=self.bos_token_id,
-            eos_id=self.eos_token_id,
-            pad_piece=self.pad_token,
-            unk_piece=self.unk_token,
-            bos_piece=self.bos_token,
-            eos_piece=self.eos_token
+            input=input_file,
+            vocab_size=vocab_size - len(self.special_tokens),  # Account for special tokens
+            model_prefix=model_prefix,
+            model_type=model_type,
+            character_coverage=character_coverage,
+            input_sentence_size=input_sentence_size,
+            shuffle_input_sentence=shuffle_input_sentence,
+            normalization_rule_name=normalization_rule_name,
+            pad_id=self.special_tokens["<pad>"],
+            unk_id=self.special_tokens["<unk>"],
+            bos_id=self.special_tokens["<bos>"],
+            eos_id=self.special_tokens["<eos>"],
+            user_defined_symbols=list(self.special_tokens.keys()),
+            add_dummy_prefix=add_dummy_prefix
         )
         
         # Load the trained model
-        self.sp = spm.SentencePieceProcessor()
-        self.sp.load(f"{model_path}.model")
+        self.model_path = f"{model_prefix}.model"
+        self.load(self.model_path)
+        logger.info(f"Tokenizer trained and saved to {self.model_path}")
+    
+    def load(self, model_path: str) -> None:
+        """
+        Load a trained SentencePiece model.
         
-        # Clean up temporary file
-        os.remove(corpus_file)
-        
-        print(f"Tokenizer trained and saved to {model_path}.model and {model_path}.vocab")
-        
-    def load(self, model_path: str):
-        """Load a trained SentencePiece model."""
-        self.sp = spm.SentencePieceProcessor()
-        self.sp.load(model_path)
-        
+        Args:
+            model_path: Path to SentencePiece model
+        """
+        logger.info(f"Loading tokenizer from {model_path}")
+        self.sp_model = spm.SentencePieceProcessor()
+        self.sp_model.load(model_path)
+        self.model_path = model_path
+    
     def encode(self, text: str, add_special_tokens: bool = True) -> List[int]:
-        """Encode text to token IDs."""
-        if self.sp is None:
-            raise ValueError("Tokenizer model not loaded. Call train() or load() first.")
+        """
+        Encode text to token IDs.
+        
+        Args:
+            text: Input text
+            add_special_tokens: Whether to add BOS/EOS tokens
             
+        Returns:
+            List of token IDs
+        """
+        if self.sp_model is None:
+            logger.error("Tokenizer model not loaded")
+            raise ValueError("Tokenizer model not loaded. Call load() or train() first.")
+        
+        tokens = self.sp_model.encode(text, out_type=int)
+        
         if add_special_tokens:
-            tokens = [self.bos_token_id] + self.sp.encode(text) + [self.eos_token_id]
-        else:
-            tokens = self.sp.encode(text)
-            
+            tokens = [self.special_tokens["<bos>"]] + tokens + [self.special_tokens["<eos>"]]
+        
         return tokens
     
     def decode(self, token_ids: List[int], remove_special_tokens: bool = True) -> str:
-        """Decode token IDs to text."""
-        if self.sp is None:
-            raise ValueError("Tokenizer model not loaded. Call train() or load() first.")
+        """
+        Decode token IDs to text.
+        
+        Args:
+            token_ids: List of token IDs
+            remove_special_tokens: Whether to remove special tokens
             
+        Returns:
+            Decoded text
+        """
+        if self.sp_model is None:
+            logger.error("Tokenizer model not loaded")
+            raise ValueError("Tokenizer model not loaded. Call load() or train() first.")
+        
         if remove_special_tokens:
-            # Filter out special tokens
-            token_ids = [
-                token_id for token_id in token_ids 
-                if token_id not in [self.pad_token_id, self.bos_token_id, self.eos_token_id]
-            ]
+            special_ids = list(self.special_tokens.values())
+            token_ids = [t for t in token_ids if t not in special_ids]
+        
+        return self.sp_model.decode(token_ids)
+    
+    def get_vocab_size(self) -> int:
+        """
+        Get the vocabulary size.
+        
+        Returns:
+            Vocabulary size including special tokens
+        """
+        if self.sp_model is None:
+            logger.warning("Tokenizer model not loaded, returning only special tokens count")
+            return len(self.special_tokens)
+        
+        return self.sp_model.get_piece_size()
+    
+    def token_to_id(self, token: str) -> int:
+        """
+        Convert a token to its ID.
+        
+        Args:
+            token: The token string
             
-        return self.sp.decode(token_ids)
+        Returns:
+            Token ID
+        """
+        if token in self.special_tokens:
+            return self.special_tokens[token]
+        
+        if self.sp_model is None:
+            logger.error("Tokenizer model not loaded")
+            raise ValueError("Tokenizer model not loaded. Call load() or train() first.")
+        
+        return self.sp_model.piece_to_id(token)
     
-    def save(self, path: str):
-        """Save tokenizer files to the specified path."""
-        if self.sp is None:
-            raise ValueError("Tokenizer model not loaded. Call train() or load() first.")
+    def id_to_token(self, token_id: int) -> str:
+        """
+        Convert an ID to its token.
+        
+        Args:
+            token_id: The token ID
             
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        Returns:
+            Token string
+        """
+        for token, idx in self.special_tokens.items():
+            if idx == token_id:
+                return token
         
-        # Copy the model and vocab files
-        model_path = f"{self.model_prefix}.model"
-        vocab_path = f"{self.model_prefix}.vocab"
+        if self.sp_model is None:
+            logger.error("Tokenizer model not loaded")
+            raise ValueError("Tokenizer model not loaded. Call load() or train() first.")
         
-        import shutil
-        shutil.copy(model_path, f"{path}.model")
-        shutil.copy(vocab_path, f"{path}.vocab")
-        
-    @property
-    def vocab_size(self):
-        """Get the vocabulary size."""
-        if self.sp is not None:
-            return self.sp.get_piece_size()
-        return self._vocab_size
+        return self.sp_model.id_to_piece(token_id)
     
-    @vocab_size.setter
-    def vocab_size(self, value):
-        """Set the vocabulary size."""
-        self._vocab_size = value
+    def batch_encode(self, texts: List[str], add_special_tokens: bool = True) -> List[List[int]]:
+        """
+        Encode a batch of texts to token IDs.
+        
+        Args:
+            texts: List of input texts
+            add_special_tokens: Whether to add BOS/EOS tokens
+            
+        Returns:
+            List of lists of token IDs
+        """
+        return [self.encode(text, add_special_tokens) for text in texts]
+    
+    def batch_decode(self, batch_token_ids: List[List[int]], remove_special_tokens: bool = True) -> List[str]:
+        """
+        Decode a batch of token IDs to texts.
+        
+        Args:
+            batch_token_ids: List of lists of token IDs
+            remove_special_tokens: Whether to remove special tokens
+            
+        Returns:
+            List of decoded texts
+        """
+        return [self.decode(token_ids, remove_special_tokens) for token_ids in batch_token_ids]
 
 
-class TranslationDataset(Dataset):
-    def __init__(
-        self,
-        src_texts: List[str],
-        tgt_texts: List[str],
-        src_tokenizer: TokenizerSentencePiece,
-        tgt_tokenizer: TokenizerSentencePiece,
-        max_length: int = 128
-    ):
-        self.src_texts = src_texts
-        self.tgt_texts = tgt_texts
-        self.src_tokenizer = src_tokenizer
-        self.tgt_tokenizer = tgt_tokenizer
-        self.max_length = max_length
+class TranslationTokenizer:
+    def __init__(self, 
+                src_tokenizer_path: Optional[str] = None, 
+                tgt_tokenizer_path: Optional[str] = None,
+                share_tokenizer: bool = False):
+        """
+        Initialize tokenizers for source and target languages.
         
-    def __len__(self):
-        return len(self.src_texts)
-    
-    def __getitem__(self, idx) -> Dict[str, torch.Tensor]:
-        src_text = self.src_texts[idx]
-        tgt_text = self.tgt_texts[idx]
+        Args:
+            src_tokenizer_path: Path to source language tokenizer
+            tgt_tokenizer_path: Path to target language tokenizer
+            share_tokenizer: Use same tokenizer for source and target
+        """
+        self.share_tokenizer = share_tokenizer
         
-        # Tokenize
-        src_tokens = self.src_tokenizer.encode(src_text)
-        tgt_tokens = self.tgt_tokenizer.encode(tgt_text)
+        if share_tokenizer:
+            # Use the same tokenizer for both source and target
+            self.src_tokenizer = Tokenizer(src_tokenizer_path)
+            self.tgt_tokenizer = self.src_tokenizer
+        else:
+            # Use separate tokenizers
+            self.src_tokenizer = Tokenizer(src_tokenizer_path)
+            self.tgt_tokenizer = Tokenizer(tgt_tokenizer_path)
+    
+    def train(self, 
+              src_file: str, 
+              tgt_file: Optional[str] = None, 
+              src_vocab_size: int = 32000,
+              tgt_vocab_size: int = 32000,
+              src_prefix: str = "tokenizer_src",
+              tgt_prefix: str = "tokenizer_tgt",
+              **kwargs) -> None:
+        """
+        Train tokenizers for source and target languages.
         
-        # Truncate if needed
-        src_tokens = src_tokens[:self.max_length]
-        tgt_tokens = tgt_tokens[:self.max_length]
+        Args:
+            src_file: Path to source language text file
+            tgt_file: Path to target language text file (optional if share_tokenizer)
+            src_vocab_size: Source vocabulary size
+            tgt_vocab_size: Target vocabulary size
+            src_prefix: Output model prefix for source tokenizer
+            tgt_prefix: Output model prefix for target tokenizer
+            **kwargs: Additional arguments for Tokenizer.train()
+        """
+        logger.info(f"Training source tokenizer on {src_file}")
+        self.src_tokenizer.train(src_file, vocab_size=src_vocab_size, model_prefix=src_prefix, **kwargs)
         
-        # Convert to tensors
-        src_tensor = torch.tensor(src_tokens, dtype=torch.long)
-        tgt_tensor = torch.tensor(tgt_tokens, dtype=torch.long)
-        
-        return {"src": src_tensor, "tgt": tgt_tensor}
-
-
-def prepare_datasets(
-    data_path: str,
-    src_lang: str,
-    tgt_lang: str,
-    src_tokenizer: TokenizerSentencePiece,
-    tgt_tokenizer: TokenizerSentencePiece,
-    max_length: int = 128,
-    batch_size: int = 32,
-    test_size: float = 0.1,
-    val_size: float = 0.1,
-    train_tokenizer: bool = True
-) -> Tuple[DataLoader, DataLoader, DataLoader]:
-    """Prepare datasets and dataloaders for training."""
-    # Load data
-    if data_path.endswith('.csv'):
-        df = pd.read_csv(data_path)
-    elif data_path.endswith('.tsv'):
-        df = pd.read_csv(data_path, sep='\t')
-    else:
-        raise ValueError(f"Unsupported file format: {data_path}")
-        
-    src_texts = df[src_lang].tolist()
-    tgt_texts = df[tgt_lang].tolist()
+        if self.share_tokenizer:
+            logger.info("Using shared tokenizer for source and target")
+            self.tgt_tokenizer = self.src_tokenizer
+        else:
+            if tgt_file is None:
+                raise ValueError("Target file must be provided when not sharing tokenizers")
+            
+            logger.info(f"Training target tokenizer on {tgt_file}")
+            self.tgt_tokenizer.train(tgt_file, vocab_size=tgt_vocab_size, model_prefix=tgt_prefix, **kwargs)
     
-    # Train tokenizers if requested
-    if train_tokenizer:
-        print(f"Training source language tokenizer ({src_lang})...")
-        src_tokenizer.train(src_texts, output_dir=f"./tokenizers/{src_lang}")
-        
-        print(f"Training target language tokenizer ({tgt_lang})...")
-        tgt_tokenizer.train(tgt_texts, output_dir=f"./tokenizers/{tgt_lang}")
+    def get_src_vocab_size(self) -> int:
+        """Get source vocabulary size."""
+        return self.src_tokenizer.get_vocab_size()
     
-    # Split data into train, validation, and test sets
-    train_src, temp_src, train_tgt, temp_tgt = train_test_split(
-        src_texts, tgt_texts, test_size=test_size+val_size, random_state=42
-    )
+    def get_tgt_vocab_size(self) -> int:
+        """Get target vocabulary size."""
+        return self.tgt_tokenizer.get_vocab_size()
     
-    val_ratio = val_size / (test_size + val_size)
-    val_src, test_src, val_tgt, test_tgt = train_test_split(
-        temp_src, temp_tgt, test_size=1-val_ratio, random_state=42
-    )
+    def encode_src(self, text: str, add_special_tokens: bool = True) -> List[int]:
+        """Encode source text."""
+        return self.src_tokenizer.encode(text, add_special_tokens)
     
-    # Create datasets
-    train_dataset = TranslationDataset(
-        train_src, train_tgt, src_tokenizer, tgt_tokenizer, max_length
-    )
+    def encode_tgt(self, text: str, add_special_tokens: bool = True) -> List[int]:
+        """Encode target text."""
+        return self.tgt_tokenizer.encode(text, add_special_tokens)
     
-    val_dataset = TranslationDataset(
-        val_src, val_tgt, src_tokenizer, tgt_tokenizer, max_length
-    )
+    def decode_src(self, token_ids: List[int], remove_special_tokens: bool = True) -> str:
+        """Decode source token IDs."""
+        return self.src_tokenizer.decode(token_ids, remove_special_tokens)
     
-    test_dataset = TranslationDataset(
-        test_src, test_tgt, src_tokenizer, tgt_tokenizer, max_length
-    )
+    def decode_tgt(self, token_ids: List[int], remove_special_tokens: bool = True) -> str:
+        """Decode target token IDs."""
+        return self.tgt_tokenizer.decode(token_ids, remove_special_tokens)
     
-    # Create dataloaders
-    def collate_fn(batch):
-        src_tensors = [item["src"] for item in batch]
-        tgt_tensors = [item["tgt"] for item in batch]
-        
-        # Pad sequences
-        src_tensors = torch.nn.utils.rnn.pad_sequence(
-            src_tensors, batch_first=True, padding_value=src_tokenizer.pad_token_id
-        )
-        
-        tgt_tensors = torch.nn.utils.rnn.pad_sequence(
-            tgt_tensors, batch_first=True, padding_value=tgt_tokenizer.pad_token_id
-        )
-        
-        return {"src": src_tensors, "tgt": tgt_tensors}
+    def get_pad_id(self) -> int:
+        """Get padding token ID."""
+        return self.src_tokenizer.special_tokens["<pad>"]
     
-    train_dataloader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn
-    )
+    def get_bos_id(self) -> int:
+        """Get beginning of sequence token ID."""
+        return self.src_tokenizer.special_tokens["<bos>"]
     
-    val_dataloader = DataLoader(
-        val_dataset, batch_size=batch_size, collate_fn=collate_fn
-    )
-    
-    test_dataloader = DataLoader(
-        test_dataset, batch_size=batch_size, collate_fn=collate_fn
-    )
-    
-    print(f"Train size: {len(train_dataset)}")
-    print(f"Validation size: {len(val_dataset)}")
-    print(f"Test size: {len(test_dataset)}")
-    
-    return train_dataloader, val_dataloader, test_dataloader
+    def get_eos_id(self) -> int:
+        """Get end of sequence token ID."""
+        return self.src_tokenizer.special_tokens["<eos>"]
