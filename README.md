@@ -156,3 +156,5 @@ You can adjust the configuration files to balance performance and resource usage
 - ["Attention Is All You Need"](https://arxiv.org/abs/1706.03762) paper by Google and University of Torronto, Canada
 - PyTorch documentation and tutorials
 - The open-source NLP community
+
+# Jahid MD HASAN
